@@ -49,6 +49,11 @@ class Handler implements HandlerInterface
      * @var MediaManagerInterface
      */
     protected $mediaManager;
+    
+    /**
+     * @var StorageInterface
+     */
+    protected $mediaStorage;
 
     /**
      * @var HelperInterface
@@ -71,6 +76,7 @@ class Handler implements HandlerInterface
         Environment $twig,
         EventDispatcherInterface $eventDispatcher,
         MediaManagerInterface $mediaManager,
+        StorageInterface $mediaStorage,
         string $honeyPotStrategy = self::HONEY_POT_STRATEGY_SPAM,
         ?string $honeyPotField = null
     ) {
@@ -78,7 +84,8 @@ class Handler implements HandlerInterface
         $this->mailHelper = $mailHelper;
         $this->twig = $twig;
         $this->eventDispatcher = $eventDispatcher;
-        $this->mediaManager = $mediaManager;
+        $this->mediaManager = $mediaManager;     
+        $this->mediaStorage = $mediaStorage;
         $this->honeyPotStrategy = $honeyPotStrategy;
         $this->honeyPotField = $honeyPotField;
     }
@@ -218,31 +225,46 @@ class Handler implements HandlerInterface
     {
         $attachments = [];
 
+        /** @var Dynamic $formData */
+        $formData    = $form->getData();
+
         foreach ($configuration->getFileFields() as $field => $collectionId) {
             if (!$form->has($field)) {
                 continue;
             }
 
-            /** @var FormInterface $formField */
-            $formField = $form[$field];
+            if (array_key_exists($field, $formData->getData())) {
+                $mediaIds = $formData->getData()[$field];
 
-            if (!\count($formField->getData())) {
-                continue;
-            }
-
-            $files = $formField->getData();
-
-            if (!\is_array($files)) {
-                $files = [$files];
-            }
-
-            /** @var UploadedFile $file */
-            foreach ($files as $file) {
-                if (!$file instanceof UploadedFile) {
+                foreach ($mediaIds as $mediaId) {
+                    $media = $this->mediaManager->getById($mediaId, 'en');
+                    $fileVersion = $media->getFile()->getLatestFileVersion();
+                    if ($fileVersion) {
+                        $attachments[] = new \SplFileInfo($this->mediaStorage->getPath($fileVersion->getStorageOptions()));
+                    }
+                }
+            } else {
+                /** @var FormInterface $formField */
+                $formField = $form[$field];
+    
+                if (!\count($formField->getData())) {
                     continue;
                 }
-
-                $attachments[] = $file;
+    
+                $files = $formField->getData();
+    
+                if (!\is_array($files)) {
+                    $files = [$files];
+                }
+    
+                /** @var UploadedFile $file */
+                foreach ($files as $file) {
+                    if (!$file instanceof UploadedFile) {
+                        continue;
+                    }
+    
+                    $attachments[] = $file;
+                }
             }
         }
 
